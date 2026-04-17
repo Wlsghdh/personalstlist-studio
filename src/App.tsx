@@ -1,24 +1,105 @@
 import { useState, useRef } from 'react'
 import './App.css'
 
+type Step = 'input' | 'loading' | 'result'
+
 function App() {
   const [photo, setPhoto] = useState<string | null>(null)
   const [height, setHeight] = useState('')
   const [weight, setWeight] = useState('')
+  const [step, setStep] = useState<Step>('input')
+  const [report, setReport] = useState('')
+  const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = () => setPhoto(reader.result as string)
-      reader.readAsDataURL(file)
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setPhoto(reader.result as string)
+    reader.readAsDataURL(file)
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setStep('loading')
+
+    try {
+      const res = await fetch('/api/style-consult', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          photo: photo ?? null,
+          height: Number(height),
+          weight: Number(weight),
+        }),
+      })
+      const data = await res.json() as { report?: string; error?: string }
+      if (!res.ok || data.error) {
+        throw new Error(data.error ?? '알 수 없는 오류')
+      }
+      setReport(data.report ?? '')
+      setStep('result')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '오류가 발생했습니다.')
+      setStep('input')
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    alert(`키: ${height}cm, 몸무게: ${weight}kg 로 스타일 분석을 시작합니다!`)
+  const handleReset = () => {
+    setStep('input')
+    setReport('')
+    setError('')
+  }
+
+  if (step === 'loading') {
+    return (
+      <div className="container center">
+        <div className="spinner" />
+        <p className="loading-text">스타일 분석 중...</p>
+        <p className="loading-sub">AI가 맞춤 보고서를 작성하고 있어요</p>
+      </div>
+    )
+  }
+
+  if (step === 'result') {
+    return (
+      <div className="container">
+        <header className="header">
+          <h1 className="title">스타일 컨설팅 보고서</h1>
+          <p className="subtitle">AI가 분석한 나만의 스타일 가이드</p>
+        </header>
+
+        <div className="report-card">
+          {photo && (
+            <div className="report-photo">
+              <img src={photo} alt="프로필" />
+              <div className="report-info">
+                <span>키 {height}cm</span>
+                <span>몸무게 {weight}kg</span>
+              </div>
+            </div>
+          )}
+          <div className="report-content">
+            {report.split('\n').map((line, i) => {
+              if (/^#{1,3}\s/.test(line)) {
+                return <h3 key={i}>{line.replace(/^#{1,3}\s/, '')}</h3>
+              }
+              if (/^\d+\.\s/.test(line)) {
+                return <h3 key={i}>{line}</h3>
+              }
+              if (line.trim() === '') return <br key={i} />
+              return <p key={i}>{line}</p>
+            })}
+          </div>
+        </div>
+
+        <button className="btn-reset" onClick={handleReset}>
+          다시 분석하기
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -29,7 +110,6 @@ function App() {
       </header>
 
       <form className="form" onSubmit={handleSubmit}>
-        {/* 사진 업로드 */}
         <div className="photo-section">
           <div
             className="photo-upload"
@@ -44,7 +124,7 @@ function App() {
                   <circle cx="12" cy="7" r="4" />
                 </svg>
                 <span>사진 업로드</span>
-                <small>클릭하여 사진 선택</small>
+                <small>클릭하여 사진 선택 (선택사항)</small>
               </div>
             )}
           </div>
@@ -66,7 +146,6 @@ function App() {
           )}
         </div>
 
-        {/* 키 & 몸무게 */}
         <div className="input-group">
           <label htmlFor="height">키</label>
           <div className="input-with-unit">
@@ -100,6 +179,8 @@ function App() {
             <span className="unit">kg</span>
           </div>
         </div>
+
+        {error && <p className="error-msg">{error}</p>}
 
         <button type="submit" className="btn-submit">
           스타일 분석 시작하기
