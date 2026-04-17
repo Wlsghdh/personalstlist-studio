@@ -3,9 +3,20 @@ interface Env {
 }
 
 interface RequestBody {
-  photo: string
+  photo: string | null
   height: number
   weight: number
+}
+
+interface OutputItem {
+  type: string
+  role?: string
+  content?: { type: string; text: string }[]
+}
+
+interface ResponsesApiResult {
+  output: OutputItem[]
+  error?: { message: string }
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -42,51 +53,47 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const bmi = (weight / ((height / 100) ** 2)).toFixed(1)
 
-  const messages: object[] = [
+  const userContent: object[] = [
+    ...(photo
+      ? [{ type: 'input_image', image_url: photo }]
+      : []),
     {
-      role: 'system',
-      content: `당신은 전문 퍼스널 스타일리스트입니다. 사용자의 신체 정보와 사진을 바탕으로 맞춤형 스타일 컨설팅 보고서를 한국어로 작성합니다. 보고서는 다음 섹션으로 구성하세요:
-
-1. 체형 분석
-2. 퍼스널 컬러 추천 (사진 기반)
-3. 추천 스타일 & 핏
-4. 피해야 할 스타일
-5. 오늘의 코디 추천 (TOP 3)
-
-각 섹션을 명확하게 구분하고, 실용적이고 구체적인 조언을 제공하세요.`,
-    },
-    {
-      role: 'user',
-      content: [
-        ...(photo
-          ? [
-              {
-                type: 'image_url',
-                image_url: { url: photo, detail: 'low' },
-              },
-            ]
-          : []),
-        {
-          type: 'text',
-          text: `키: ${height}cm, 몸무게: ${weight}kg, BMI: ${bmi}\n\n위 정보를 바탕으로 퍼스널 스타일 컨설팅 보고서를 작성해주세요.`,
-        },
-      ],
+      type: 'input_text',
+      text: `키 ${height}cm, 몸무게 ${weight}kg, BMI ${bmi}\n위 정보를 바탕으로 퍼스널 스타일 컨설팅 보고서를 작성해주세요.`,
     },
   ]
 
-  const model = photo ? 'gpt-4o' : 'gpt-4o-mini'
-
-  const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+  const openaiRes = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${env.OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
-      model,
-      messages,
-      max_tokens: 1500,
-      temperature: 0.7,
+      model: 'o4-mini',
+      input: [
+        {
+          role: 'developer',
+          content: [
+            {
+              type: 'input_text',
+              text: '당신은 전문 퍼스널 스타일리스트입니다. 사용자의 사진과 신체 정보를 분석하여 맞춤형 스타일 컨설팅 보고서를 작성해주세요. 보고서에는 다음 내용을 포함해주세요.\n체형분석\n퍼스널 컬러 추천\n어울리는 스타일 및 패션 아이템 추천\n피해야 할 스타일\n코디 팁\n친절하고 전문적인 톤으로 작성해주세요.',
+            },
+          ],
+        },
+        {
+          role: 'user',
+          content: userContent,
+        },
+      ],
+      text: {
+        format: { type: 'text' },
+      },
+      reasoning: {
+        effort: 'medium',
+        summary: 'auto',
+      },
+      store: true,
     }),
   })
 
@@ -98,8 +105,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     )
   }
 
-  const data = await openaiRes.json() as { choices: { message: { content: string } }[] }
-  const report = data.choices[0]?.message?.content ?? '보고서를 생성할 수 없습니다.'
+  const data = await openaiRes.json() as ResponsesApiResult
+
+  if (data.error) {
+    return Response.json(
+      { error: data.error.message },
+      { status: 502, headers: corsHeaders }
+    )
+  }
+
+  const messageItem = data.output.find(
+    (item) => item.type === 'message' && item.role === 'assistant'
+  )
+  const report =
+    messageItem?.content?.find((c) => c.type === 'output_text')?.text
+    ?? '보고서를 생성할 수 없습니다.'
 
   return Response.json({ report }, { headers: corsHeaders })
 }

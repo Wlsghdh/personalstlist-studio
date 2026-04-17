@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Cloudflare 로컬 환경변수 (API 키 포함 - 절대 커밋 금지)
+.dev.vars

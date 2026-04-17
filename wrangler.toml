@@ -1,0 +1,6 @@
+name = "personalstylist"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = "dist"
+
+[vars]
+# 로컬 테스트용 - 실제 키는 .dev.vars 파일에 설정하세요
